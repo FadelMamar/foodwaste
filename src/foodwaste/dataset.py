@@ -221,7 +221,7 @@ class FoodSegmentationDataModule(LightningDataModule):
             pin_memory=torch.cuda.is_available(),
             drop_last=False,
             #collate_fn=self.collate_fn,
-            persistent_workers=True
+            persistent_workers=self.num_workers>0
         )
         
     def val_dataloader(self):
@@ -233,13 +233,13 @@ class FoodSegmentationDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=torch.cuda.is_available(),
             #collate_fn=self.collate_fn,
-            persistent_workers=True
+            persistent_workers=self.num_workers>0
         )
                 
     def get_label_mappings(self):
         """Get label ID to label name mappings"""
         if self.dataset is not None:
-            return self.dataset.features["labels"].feature.int2str, self.dataset.features["labels"].feature.str2int
+            return id2label, label2id
         return None, None
 
 
