@@ -1,0 +1,50 @@
+# FoodWaste Semantic Segmentation Training Configuration
+
+# Model configuration
+model:
+  model_name: facebook/dinov2-with-registers-base
+  freeze_backbone: true
+  use_cls_token: false
+  token_height: 14
+  token_width: 14
+
+# Training configuration
+training:
+  learning_rate: 1e-4
+  num_epochs: 10
+  batch_size: 8
+  num_workers: 4
+  device: "cpu"
+  lrf: 0.1
+  accelerator: "auto"
+  image_size: 518
+  train_split: "train"
+  val_split: "validation"
+  weight_decay: 0.0001
+  warmup_steps: 500
+  monitor: "val_loss"
+  mode: "min"
+  patience: 10
+  seed: 42
+  precision: "bf16-mixed"
+
+# Data configuration
+data:
+  dataset_name: "EduardoPacheco/FoodSeg103"
+  cache_dir: "./data_cache"
+  mean: [123.675, 116.280, 103.530]
+  std: [58.395, 57.120, 57.375]
+
+# Logging configuration
+logging:
+  save_dir: "checkpoints"
+  eval_interval: 1
+  mlflow_url: "http://localhost:5000"
+  mlflow_experiment_name: "foodwaste-segmentation"
+  mlflow_run_name: "foodwaste-segmentation"
+
+# Data augmentation configuration
+augmentation:
+  horizontal_flip_prob: 0.5
+  rotation_limit: 45
+  brightness_contrast_prob: 0.3

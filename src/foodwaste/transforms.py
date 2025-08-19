@@ -9,21 +9,25 @@ from typing import Tuple, Dict, Any
 ADE_MEAN = np.array([123.675, 116.280, 103.530]) / 255
 ADE_STD = np.array([58.395, 57.120, 57.375]) / 255
 
-def get_train_transforms() -> A.Compose:
+def get_train_transforms(mean: Tuple[float, float, float]=ADE_MEAN, 
+                         std: Tuple[float, float, float]=ADE_STD,
+                         image_size: int=448) -> A.Compose:
     """Get training data transformations"""
     train_transform = A.Compose([
-        A.Resize(width=448, height=448),
+        A.Resize(width=image_size, height=image_size),
         A.HorizontalFlip(p=0.5),
-        A.Normalize(mean=ADE_MEAN, std=ADE_STD),
+        A.Normalize(mean=mean, std=std),
     ])
     return train_transform
 
 
-def get_val_transforms() -> A.Compose:
+def get_val_transforms(mean: Tuple[float, float, float]=ADE_MEAN, 
+                         std: Tuple[float, float, float]=ADE_STD,
+                         image_size: int=448) -> A.Compose:
     """Get validation data transformations"""
     val_transform = A.Compose([
-    A.Resize(width=448, height=448),
-    A.Normalize(mean=ADE_MEAN, std=ADE_STD),
+    A.Resize(width=image_size, height=image_size),
+    A.Normalize(mean=mean, std=std),
     ])
     return val_transform
 

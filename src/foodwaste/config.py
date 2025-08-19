@@ -2,8 +2,11 @@
 Configuration file for DINOv2 semantic segmentation training
 """
 
+from pathlib import Path
 from typing import Tuple
 from pydantic import BaseModel, Field
+
+ROOT = Path(__file__).parents[2]
 
 class DataAugmentationConfig(BaseModel):
     """Data augmentation configuration parameters"""
@@ -13,8 +16,7 @@ class DataAugmentationConfig(BaseModel):
     
 class ModelConfig(BaseModel):
     """Model configuration parameters"""
-    model_name: str = Field(default="timm/dinov2-base", description="DINOv2 model to use")
-    num_classes: int = Field(default=104, description="Number of segmentation classes (including background)")
+    model_name: str = Field(default="facebook/dinov2-with-registers-base", description="DINOv2 model to use")
     freeze_backbone: bool = Field(default=True, description="Whether to freeze the backbone")
     use_cls_token: bool = Field(default=False, description="Whether to use the cls token")
     token_height: int = Field(default=16, description="Token height for the model")
@@ -29,6 +31,8 @@ class TrainingConfig(BaseModel):
     num_workers: int = Field(default=4, description="Number of data loading workers")
     device: str = Field(default="cpu", description="Device to use for training")
     lrf: float = Field(default=0.1, description="Learning rate factor for scheduling")
+    accelerator: str = Field(default="auto", description="Accelerator to use for training")
+    precision: str = Field(default="bf16-mixed", description="Precision to use for training")
     
     # Data parameters
     image_size: int = Field(default=1024, description="Input image size")
@@ -50,9 +54,7 @@ class TrainingConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging and saving configuration parameters"""
     save_dir: str = Field(default="checkpoints", description="Directory to save checkpoints")
-    log_interval: int = Field(default=100, description="Logging interval in steps")
-    eval_interval: int = Field(default=500, description="Evaluation interval in steps")
-    save_interval: int = Field(default=1000, description="Checkpoint saving interval in steps")
+    eval_interval: int = Field(default=1, description="Evaluation interval in epoch")
     mlflow_url: str = Field(default="http://localhost:5000", description="MLflow server URL")
     mlflow_experiment_name: str = Field(default="foodwaste-segmentation", description="MLflow experiment name")
     mlflow_run_name: str = Field(default="foodwaste-segmentation", description="MLflow run name")

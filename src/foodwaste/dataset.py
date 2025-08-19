@@ -7,8 +7,9 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from typing import Dict, Any, Tuple
 from datasets import load_dataset
-from transforms import get_train_transforms, get_val_transforms
 from lightning import LightningDataModule
+
+from .transforms import get_train_transforms, get_val_transforms, ADE_MEAN, ADE_STD
 
 id2label = {
     0: "background",
@@ -157,21 +158,26 @@ class FoodSegmentationDataModule(LightningDataModule):
     def __init__(
         self,
         cache_dir: str = "./data_cache",
+        dataset_name: str = "EduardoPacheco/FoodSeg103",
         batch_size: int = 8,
         num_workers: int = 0,
         train_split: str = "train",
-        val_split: str = "validation"
+        val_split: str = "validation",
+        image_size: int = 448,
+        mean: Tuple[float, float, float] = ADE_MEAN,
+        std: Tuple[float, float, float] = ADE_STD
     ):
         super().__init__()
         self.cache_dir = cache_dir
+        self.dataset_name = dataset_name
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.train_split = train_split
         self.val_split = val_split
         
         # Initialize transforms
-        self.train_transform = get_train_transforms()
-        self.val_transform = get_val_transforms()
+        self.train_transform = get_train_transforms(mean=mean, std=std, image_size=image_size)
+        self.val_transform = get_val_transforms(mean=mean, std=std, image_size=image_size)
         
         # Dataset attributes
         self.dataset = None
@@ -181,7 +187,7 @@ class FoodSegmentationDataModule(LightningDataModule):
     def prepare_data(self):
         """Download and prepare the dataset"""
         # Load FoodSeg103 dataset
-        self.dataset = load_dataset("EduardoPacheco/FoodSeg103", cache_dir=self.cache_dir)
+        self.dataset = load_dataset(self.dataset_name, cache_dir=self.cache_dir)
     
     def collate_fn(self, inputs):
         """Custom collate function for batching"""
@@ -214,7 +220,8 @@ class FoodSegmentationDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=torch.cuda.is_available(),
             drop_last=False,
-            collate_fn=self.collate_fn
+            #collate_fn=self.collate_fn,
+            persistent_workers=True
         )
         
     def val_dataloader(self):
@@ -224,7 +231,9 @@ class FoodSegmentationDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            pin_memory=torch.cuda.is_available()
+            pin_memory=torch.cuda.is_available(),
+            #collate_fn=self.collate_fn,
+            persistent_workers=True
         )
                 
     def get_label_mappings(self):

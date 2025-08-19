@@ -4,7 +4,7 @@ from transformers.modeling_outputs import SemanticSegmenterOutput
 from .dataset import id2label
 
 class LinearClassifier(torch.nn.Module):
-    def __init__(self, in_channels, tokenW=16, tokenH=16, num_labels=1):
+    def __init__(self, in_channels, tokenW=14, tokenH=14, num_labels=1):
         super(LinearClassifier, self).__init__()
 
         self.in_channels = in_channels
@@ -24,7 +24,7 @@ class Dinov2ForSemanticSegmentation(Dinov2PreTrainedModel):
     super().__init__(config)
 
     self.dinov2 = Dinov2Model(config)
-    self.classifier = LinearClassifier(config.hidden_size, 32, 32, config.num_labels)
+    self.classifier = LinearClassifier(config.hidden_size, config.image_size//14, config.image_size//14, config.num_labels)
 
   def forward(self, pixel_values, output_hidden_states=False, output_attentions=False, labels=None):
     # use frozen features
@@ -38,24 +38,24 @@ class Dinov2ForSemanticSegmentation(Dinov2PreTrainedModel):
     logits = self.classifier(patch_embeddings)
     logits = torch.nn.functional.interpolate(logits, size=pixel_values.shape[2:], mode="bilinear", align_corners=False)
 
-    loss = None
-    if labels is not None:
+    #loss = None
+    #if labels is not None:
       # important: we're going to use 0 here as ignore index instead of the default -100
       # as we don't want the model to learn to predict background
-      loss_fct = torch.nn.CrossEntropyLoss(ignore_index=0)
-      loss = loss_fct(logits.squeeze(), labels.squeeze())
+      #loss_fct = torch.nn.CrossEntropyLoss(ignore_index=0)
+      #loss = loss_fct(logits.squeeze(), labels.squeeze())
 
     return SemanticSegmenterOutput(
-        loss=loss,
+        #loss=loss,
         logits=logits,
         hidden_states=outputs.hidden_states,
         attentions=outputs.attentions,
     )
 
-def create_model(model_name: str="facebook/dinov2-base", freeze_backbone: bool=True):
-    model = Dinov2ForSemanticSegmentation.from_pretrained(model_name, id2label=id2label, num_labels=len(id2label))
+def create_model(model_name: str="facebook/dinov2-base", freeze_backbone: bool=True,image_size:int=518):
+    model = Dinov2ForSemanticSegmentation.from_pretrained(model_name, id2label=id2label, num_labels=len(id2label),image_size=image_size)
     if freeze_backbone:
         for name, param in model.named_parameters():
-            if name.startswith("dinov2"):
+            if "classifier" not in name:
                 param.requires_grad = False
     return model

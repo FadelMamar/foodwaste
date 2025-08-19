@@ -4,128 +4,124 @@ Main training script for DINOv2 semantic segmentation using PyTorch Lightning
 """
 
 import os
-import argparse
-import logging
+
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
-from lightning.pytorch.loggers import TensorBoardLogger
-import torchmetrics
+from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
+from torchmetrics.segmentation import MeanIoU,DiceScore
+from copy import deepcopy
 
-from config import TrainingConfig, DataConfig
-from models import create_model
-from dataset import load_foodseg103_dataset, create_data_loaders
-from utils import (
-    set_seed, calculate_metrics, visualize_batch, create_color_map
+from .config import TrainingConfig, MainConfig
+from .models import create_model
+from .dataset import id2label, FoodSegmentationDataModule
+
+from .utils import (
+    set_seed
 )
+
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 
 class FoodWasteSegmentationModule(L.LightningModule):
     """PyTorch Lightning module for FoodWaste semantic segmentation"""
     
-    def __init__(self, config: LightningTrainingConfig):
+    def __init__(self, config: MainConfig):
         super().__init__()
         self.save_hyperparameters()
         self.config = config
         
         # Create model
         self.model = create_model(
-            model_name=config.model_name,
-            freeze_backbone=config.freeze_backbone
+            model_name=config.model.model_name,
+            freeze_backbone=config.model.freeze_backbone,
+            image_size=config.training.image_size
         )
         
+        # Losses
+        self.train_loss = nn.CrossEntropyLoss(ignore_index=0)
+        self.val_loss = nn.CrossEntropyLoss(ignore_index=0)
+
         # Metrics
-        self.train_loss = torchmetrics.MeanMetric()
-        self.val_loss = torchmetrics.MeanMetric()
-        self.val_iou = torchmetrics.JaccardIndex(
-            task="multiclass", 
-            num_classes=config.num_labels,
-            ignore_index=config.ignore_index
-        )
+        self.val_metrics = {
+            "iou": MeanIoU(
+                num_classes=len(id2label),
+                include_background=False,
+            ),
+            "dice": DiceScore(
+                num_classes=len(id2label),
+                include_background=False,
+                average="weighted"
+            )
+        }
+        self.train_metrics = deepcopy(self.val_metrics)
+
+        self.metrics = {
+            "train": self.train_metrics,
+            "val": self.val_metrics
+        }
+        
         
     def forward(self, pixel_values, labels=None):
         """Forward pass through the model"""
         return self.model(pixel_values=pixel_values, labels=labels)
     
+    def shared_step(self, batch, stage: str):
+        """Shared step for training and validation"""
+        images, labels = batch
+        outputs = self(pixel_values=images, labels=labels)
+        logits = outputs.logits
+
+        if stage == "train":
+            loss = self.train_loss(logits, labels)
+        else:
+            loss = self.val_loss(logits, labels)
+
+        self.log(f"{stage}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+        for name, metric in self.metrics[stage].items():
+            metric.update(logits.detach().cpu().argmax(dim=1), labels.detach().cpu())
+            #self.log(f"{stage}_{name}", metric, prog_bar=True, on_step=False, on_epoch=True)
+
+        return loss
+    
     def training_step(self, batch, batch_idx):
         """Training step"""
-        images, labels = batch
-        
-        # Forward pass
-        outputs = self(pixel_values=images, labels=labels)
-        loss = outputs.loss
-        
-        # Log loss
-        self.train_loss.update(loss)
-        self.log("train_loss", loss, prog_bar=True, sync_dist=True)
-        
+        loss = self.shared_step(batch, "train")
         return loss
     
     def validation_step(self, batch, batch_idx):
         """Validation step"""
-        images, labels = batch
-        
-        # Forward pass
-        outputs = self(pixel_values=images, labels=labels)
-        loss = outputs.loss
-        
-        # Log loss
-        self.val_loss.update(loss)
-        self.log("val_loss", loss, prog_bar=True, sync_dist=True)
-        
-        # Calculate IoU
-        predictions = torch.argmax(outputs.logits, dim=1)
-        self.val_iou.update(predictions, labels)
-        self.log("val_iou", self.val_iou, prog_bar=True, sync_dist=True)
-        
+        loss = self.shared_step(batch, "val")
         return loss
     
-    def on_train_epoch_end(self):
-        """Called at the end of training epoch"""
-        # Log epoch metrics
-        self.log("train_loss_epoch", self.train_loss.compute(), sync_dist=True)
-        self.train_loss.reset()
-    
-    def on_validation_epoch_end(self):
-        """Called at the end of validation epoch"""
-        # Log epoch metrics
-        self.log("val_loss_epoch", self.val_loss.compute(), sync_dist=True)
-        self.log("val_iou_epoch", self.val_iou.compute(), sync_dist=True)
-        self.val_loss.reset()
-        self.val_iou.reset()
+    def on_validation_epoch_end(self) -> None:
+        for name, metric in self.metrics["val"].items():
+            score = metric.compute().cpu()
+            self.log(f"val_{name}",score, prog_bar=True, on_step=False, on_epoch=True)        
     
     def configure_optimizers(self):
         """Configure optimizer and scheduler"""
         optimizer = AdamW(
             self.parameters(),
-            lr=self.config.learning_rate,
-            weight_decay=self.config.weight_decay
+            lr=self.config.training.learning_rate,
+            weight_decay=self.config.training.weight_decay
         )
-        
-        # Calculate total steps
-        total_steps = self.trainer.estimated_stepping_batches
-        
-        scheduler = CosineAnnealingLR(
+                
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
-            T_max=total_steps,
-            eta_min=self.config.learning_rate * 0.1
+            T_0=self.config.training.num_epochs,
+            T_mult=1,
+            eta_min=self.config.training.learning_rate * self.config.training.lrf,
         )
         
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_loss",
-                "interval": "step",
-                "frequency": 1
-            }
-        }
+        return [optimizer], [scheduler]
     
     def configure_callbacks(self):
         """Configure callbacks"""
@@ -133,11 +129,11 @@ class FoodWasteSegmentationModule(L.LightningModule):
         
         # Model checkpointing
         checkpoint_callback = ModelCheckpoint(
-            dirpath=self.config.save_dir,
-            filename="foodwaste-{epoch:02d}-{val_loss:.4f}-{val_iou:.4f}",
-            monitor=self.config.monitor_metric,
-            mode=self.config.monitor_mode,
-            save_top_k=self.config.save_top_k,
+            dirpath=self.config.logging.save_dir,
+            filename="foodwaste-{epoch:02d}-{val_iou:.4f}",
+            monitor=self.config.training.monitor,
+            mode=self.config.training.mode,
+            save_on_train_epoch_end=False,
             save_last=True,
             verbose=True
         )
@@ -145,123 +141,62 @@ class FoodWasteSegmentationModule(L.LightningModule):
         
         # Early stopping
         early_stopping = EarlyStopping(
-            monitor=self.config.monitor_metric,
-            mode=self.config.monitor_mode,
-            patience=self.config.early_stopping_patience,
+            monitor=self.config.training.monitor,
+            mode=self.config.training.mode,
+            patience=self.config.training.patience,
             verbose=True
         )
         callbacks.append(early_stopping)
         
         # Learning rate monitoring
-        lr_monitor = LearningRateMonitor(logging_interval="step")
+        lr_monitor = LearningRateMonitor(logging_interval="epoch")
         callbacks.append(lr_monitor)
         
         return callbacks
 
 
-class FoodWasteDataModule(L.LightningDataModule):
-    """PyTorch Lightning data module for FoodWaste dataset"""
-    
-    def __init__(self, config: LightningDataConfig):
-        super().__init__()
-        self.config = config
-        
-        self.train_loader = None
-        self.val_loader = None
-    
-    def setup(self, stage: Optional[str] = None):
-        """Setup data loaders"""
-        if stage == "fit" or stage is None:
-            # Load dataset
-            dataset = load_foodseg103_dataset(cache_dir=self.config.cache_dir)
-            
-            # Create data loaders
-            self.train_loader, self.val_loader = create_data_loaders(
-                dataset,
-                batch_size=self.config.batch_size,
-                num_workers=self.config.num_workers,
-                train_split=self.config.train_split,
-                val_split=self.config.val_split
-            )
-    
-    def train_dataloader(self):
-        """Return training data loader"""
-        return self.train_loader
-    
-    def val_dataloader(self):
-        """Return validation data loader"""
-        return self.val_loader
-
-
-def setup_logging(log_dir: str = "logs") -> logging.Logger:
-    """Setup logging configuration"""
-    os.makedirs(log_dir, exist_ok=True)
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(os.path.join(log_dir, 'training.log')),
-            logging.StreamHandler()
-        ]
-    )
-    
-    return logging.getLogger(__name__)
-
-
-def main(args: argparse.Namespace):
+def runner(config: MainConfig):
     """Main training function using PyTorch Lightning"""
     # Setup
-    logger = setup_logging()
-    logger.info("Starting DINOv2 semantic segmentation training with PyTorch Lightning")
-    
-    # Load configuration
-    training_config = LightningTrainingConfig()
-    data_config = LightningDataConfig()
-    
-    # Override config with command line arguments if provided
-    if args.config:
-        # TODO: Add config file loading logic
-        pass
-    
+    logger.info("Starting FoodWaste semantic segmentation training with PyTorch Lightning")
+
     # Set seed for reproducibility
-    set_seed(training_config.seed)
-    
+    set_seed(config.training.seed)
+
     # Create output directories
-    os.makedirs(training_config.save_dir, exist_ok=True)
+    os.makedirs(config.logging.save_dir, exist_ok=True)
     
     # Create data module
-    data_module = FoodWasteDataModule(data_config)
+    data_module = FoodSegmentationDataModule(batch_size=config.training.batch_size, 
+                                            num_workers=config.training.num_workers,
+                                            cache_dir=config.data.cache_dir,
+                                            dataset_name=config.data.dataset_name,
+                                            image_size=config.training.image_size,
+                                            mean=config.data.mean,
+                                            std=config.data.std,
+                                            train_split=config.training.train_split, 
+                                            val_split=config.training.val_split)
     
     # Create model
-    model = FoodWasteSegmentationModule(training_config)
+    model = FoodWasteSegmentationModule(config)
     
     # Create logger
-    tb_logger = TensorBoardLogger(
-        save_dir="lightning_logs",
-        name="foodwaste_segmentation",
-        version=None
+    mlflow_logger = MLFlowLogger(
+        tracking_uri=config.logging.mlflow_url,
+        experiment_name=config.logging.mlflow_experiment_name,
+        run_name=config.logging.mlflow_run_name,
+        #tags=config.model_dump()
     )
     
     # Create trainer
     trainer = L.Trainer(
-        max_epochs=training_config.num_epochs,
-        accelerator=training_config.accelerator,
-        devices=training_config.devices,
-        precision=training_config.precision,
-        logger=tb_logger,
-        callbacks=model.configure_callbacks(),
-        log_every_n_steps=training_config.log_interval,
-        val_check_interval=training_config.eval_interval / 1000,  # Convert to fraction
-        gradient_clip_val=training_config.max_grad_norm,
-        deterministic=training_config.deterministic,
-        enable_progress_bar=True,
-        enable_model_summary=True,
-        enable_checkpointing=True,
+        max_epochs=config.training.num_epochs,
+        accelerator=config.training.accelerator,
+        precision=config.training.precision,
+        logger=mlflow_logger,
+        #callbacks=model.configure_callbacks(),
+        check_val_every_n_epoch=config.logging.eval_interval,
         num_sanity_val_steps=2,
-        check_val_every_n_epoch=1,
-        sync_batchnorm=False,
-        strategy="auto"
     )
     
     # Train the model
@@ -269,38 +204,11 @@ def main(args: argparse.Namespace):
     trainer.fit(model, data_module)
     
     # Test the model
-    logger.info("Running final validation...")
-    trainer.validate(model, data_module)
+    #logger.info("Running final validation...")
+    #trainer.validate(model, data_module)
     
     # Save the final model
-    final_model_path = os.path.join(training_config.save_dir, "final_model.ckpt")
-    trainer.save_checkpoint(final_model_path)
+    final_model_path = trainer.checkpoint_callback.best_model_path
     logger.info(f"Final model saved to {final_model_path}")
     
     logger.info("Training completed!")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Train DINOv2 for semantic segmentation using PyTorch Lightning"
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="",
-        help="Path to configuration file"
-    )
-    parser.add_argument(
-        "--resume", 
-        action="store_true",
-        help="Resume training from checkpoint"
-    )
-    parser.add_argument(
-        "--checkpoint-path",
-        type=str,
-        default="",
-        help="Path to checkpoint for resuming training"
-    )
-    
-    args = parser.parse_args()
-    main(args)

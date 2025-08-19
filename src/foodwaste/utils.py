@@ -2,13 +2,34 @@
 Utility functions for visualization and evaluation
 """
 
+import os
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from typing import Dict, List, Tuple, Optional
-from PIL import Image
-import evaluate
-from transforms import denormalize_image
+from typing import Dict, List, Optional
+
+import lightning as L
+from rich.logging import RichHandler
+from rich.console import Console
+
+from .transforms import denormalize_image
+
+
+console = Console()
+
+def setup_logging(log_dir: str = "logs",log_file: str = "training.log") -> logging.Logger:
+    """Setup logging configuration"""
+    os.makedirs(log_dir, exist_ok=True)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(os.path.join(log_dir, log_file)),
+            RichHandler(console=console, rich_tracebacks=True)
+        ]
+    )
 
 
 def create_color_map(num_classes: int, seed: int = 42) -> Dict[int, List[int]]:
@@ -19,7 +40,6 @@ def create_color_map(num_classes: int, seed: int = 42) -> Dict[int, List[int]]:
         for k in range(num_classes)
     }
     return color_map
-
 
 def visualize_segmentation(
     image: np.ndarray,
@@ -72,7 +92,6 @@ def visualize_segmentation(
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     
     plt.show()
-
 
 def visualize_batch(
     batch: Dict[str, torch.Tensor],
@@ -133,82 +152,7 @@ def visualize_batch(
     plt.show()
 
 
-def calculate_metrics(
-    predictions: torch.Tensor,
-    labels: torch.Tensor,
-    num_classes: int,
-    ignore_index: int = 0
-) -> Dict[str, float]:
-    """
-    Calculate segmentation metrics
-    
-    Args:
-        predictions: Model predictions [batch_size, num_classes, H, W]
-        labels: Ground truth labels [batch_size, H, W]
-        num_classes: Number of classes
-        ignore_index: Index to ignore in calculations
-    
-    Returns:
-        Dictionary with metrics
-    """
-    # Convert to numpy
-    pred_np = predictions.argmax(dim=1).cpu().numpy()
-    labels_np = labels.cpu().numpy()
-    
-    # Flatten
-    pred_flat = pred_np.flatten()
-    labels_flat = labels_np.flatten()
-    
-    # Remove ignored indices
-    valid_mask = labels_flat != ignore_index
-    pred_valid = pred_flat[valid_mask]
-    labels_valid = labels_flat[valid_mask]
-    
-    # Calculate metrics
-    metric = evaluate.load("mean_iou")
-    metrics = metric.compute(
-        predictions=pred_valid,
-        references=labels_valid,
-        num_labels=num_classes
-    )
-    
-    return metrics
-
-
-def save_checkpoint(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    epoch: int,
-    loss: float,
-    save_path: str
-) -> None:
-    """Save model checkpoint"""
-    torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'loss': loss,
-    }, save_path)
-
-
-def load_checkpoint(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    checkpoint_path: str
-) -> Tuple[int, float]:
-    """Load model checkpoint"""
-    checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
-    return epoch, loss
-
 
 def set_seed(seed: int) -> None:
     """Set random seed for reproducibility"""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    L.seed_everything(seed)
