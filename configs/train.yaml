@@ -2,7 +2,7 @@
 
 # Model configuration
 model:
-  model_name: facebook/dinov2-with-registers-small
+  model_name: timm/vit_small_patch14_dinov2.lvd142m
   freeze_backbone: true
   use_cls_token: false
   #token_height: 14

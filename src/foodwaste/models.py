@@ -1,7 +1,11 @@
 import torch
+import torch.nn as nn
 from transformers import Dinov2Model, Dinov2PreTrainedModel
 from transformers.modeling_outputs import SemanticSegmenterOutput
+from torchvision import transforms as T
+import timm
 from .dataset import id2label
+from .config import MainConfig
 
 class LinearClassifier(torch.nn.Module):
     def __init__(self, in_channels, tokenW=14, tokenH=14, num_labels=1):
@@ -19,20 +23,26 @@ class LinearClassifier(torch.nn.Module):
         return self.classifier(embeddings)
 
 
-class Dinov2ForSemanticSegmentation(Dinov2PreTrainedModel):
-  def __init__(self, config):
-    super().__init__(config)
+class Dinov2ForSemanticSegmentation(nn.Module):
+  def __init__(self, config:MainConfig):
+    super().__init__()
 
-    self.dinov2 = Dinov2Model(config)
-    self.classifier = LinearClassifier(config.hidden_size, config.image_size//14, config.image_size//14, config.num_labels)
+    #self.dinov2 = Dinov2Model(config)
+    self.model = timm.create_model(
+                config.model.model_name, pretrained=True, num_classes=0
+            )
+    data_cfg = timm.data.resolve_data_config(self.model.pretrained_cfg)
+    transform = timm.data.create_transform(**data_cfg)
+    self.transform = nn.Sequential(*[t for t in transform.transforms if isinstance(t, (T.Normalize, T.Resize))])
+    self.classifier = LinearClassifier(self.model.num_features, config.training.image_size//14, config.training.image_size//14, len(id2label))
 
-  def forward(self, pixel_values, output_hidden_states=False, output_attentions=False, labels=None):
-    # use frozen features
-    outputs = self.dinov2(pixel_values,
-                            output_hidden_states=output_hidden_states,
-                            output_attentions=output_attentions)
-    # get the patch embeddings - so we exclude the CLS token
-    patch_embeddings = outputs.last_hidden_state[:,1:,:]
+    if config.model.freeze_backbone:
+        for  param in self.model.parameters():
+            param.requires_grad = False
+
+  def forward(self, pixel_values:torch.Tensor):
+    # use frozen features, so we exclude the CLS token
+    patch_embeddings = self.model.forward_features(pixel_values)[:,1:,:]
 
     # convert to logits and upsample to the size of the pixel values
     logits = self.classifier(patch_embeddings)
@@ -40,14 +50,4 @@ class Dinov2ForSemanticSegmentation(Dinov2PreTrainedModel):
 
     return SemanticSegmenterOutput(
         logits=logits,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
     )
-
-def create_model(model_name: str="facebook/dinov2-with-registers-small", freeze_backbone: bool=True,image_size:int=518):
-    model = Dinov2ForSemanticSegmentation.from_pretrained(model_name, id2label=id2label, num_labels=len(id2label),image_size=image_size)
-    if freeze_backbone:
-        for name, param in model.named_parameters():
-            if "classifier" not in name:
-                param.requires_grad = False
-    return model

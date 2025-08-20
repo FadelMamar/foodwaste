@@ -18,7 +18,7 @@ from torchmetrics.segmentation import MeanIoU,DiceScore
 from copy import deepcopy
 
 from .config import TrainingConfig, MainConfig
-from .models import create_model
+from .models import Dinov2ForSemanticSegmentation
 from .dataset import id2label, FoodSegmentationDataModule
 
 from .utils import (
@@ -39,11 +39,7 @@ class FoodWasteSegmentationModule(L.LightningModule):
         self.config = config
         
         # Create model
-        self.model = create_model(
-            model_name=config.model.model_name,
-            freeze_backbone=config.model.freeze_backbone,
-            image_size=config.training.image_size
-        )
+        self.model = Dinov2ForSemanticSegmentation(config)
         
         # Losses
         self.train_loss = nn.CrossEntropyLoss(ignore_index=0)
@@ -69,14 +65,14 @@ class FoodWasteSegmentationModule(L.LightningModule):
         }
         
         
-    def forward(self, pixel_values, labels=None):
+    def forward(self, pixel_values):
         """Forward pass through the model"""
-        return self.model(pixel_values=pixel_values, labels=labels)
+        return self.model(pixel_values=pixel_values)
     
     def shared_step(self, batch, stage: str):
         """Shared step for training and validation"""
         images, labels = batch
-        outputs = self(pixel_values=images, labels=labels)
+        outputs = self(pixel_values=images)
         logits = outputs.logits
 
         if stage == "train":
