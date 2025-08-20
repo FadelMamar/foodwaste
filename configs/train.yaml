@@ -2,11 +2,11 @@
 
 # Model configuration
 model:
-  model_name: facebook/dinov2-with-registers-base
+  model_name: facebook/dinov2-with-registers-small
   freeze_backbone: true
   use_cls_token: false
-  token_height: 14
-  token_width: 14
+  #token_height: 14
+  #token_width: 14
 
 # Training configuration
 training:

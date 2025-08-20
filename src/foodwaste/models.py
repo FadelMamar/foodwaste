@@ -38,21 +38,13 @@ class Dinov2ForSemanticSegmentation(Dinov2PreTrainedModel):
     logits = self.classifier(patch_embeddings)
     logits = torch.nn.functional.interpolate(logits, size=pixel_values.shape[2:], mode="bilinear", align_corners=False)
 
-    #loss = None
-    #if labels is not None:
-      # important: we're going to use 0 here as ignore index instead of the default -100
-      # as we don't want the model to learn to predict background
-      #loss_fct = torch.nn.CrossEntropyLoss(ignore_index=0)
-      #loss = loss_fct(logits.squeeze(), labels.squeeze())
-
     return SemanticSegmenterOutput(
-        #loss=loss,
         logits=logits,
         hidden_states=outputs.hidden_states,
         attentions=outputs.attentions,
     )
 
-def create_model(model_name: str="facebook/dinov2-base", freeze_backbone: bool=True,image_size:int=518):
+def create_model(model_name: str="facebook/dinov2-with-registers-small", freeze_backbone: bool=True,image_size:int=518):
     model = Dinov2ForSemanticSegmentation.from_pretrained(model_name, id2label=id2label, num_labels=len(id2label),image_size=image_size)
     if freeze_backbone:
         for name, param in model.named_parameters():

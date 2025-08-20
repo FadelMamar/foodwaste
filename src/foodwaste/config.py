@@ -16,11 +16,9 @@ class DataAugmentationConfig(BaseModel):
     
 class ModelConfig(BaseModel):
     """Model configuration parameters"""
-    model_name: str = Field(default="facebook/dinov2-with-registers-base", description="DINOv2 model to use")
+    model_name: str = Field(default="facebook/dinov2-with-registers-small", description="DINOv2 model to use")
     freeze_backbone: bool = Field(default=True, description="Whether to freeze the backbone")
     use_cls_token: bool = Field(default=False, description="Whether to use the cls token")
-    token_height: int = Field(default=16, description="Token height for the model")
-    token_width: int = Field(default=16, description="Token width for the model")
     
 class TrainingConfig(BaseModel):
     """Training configuration parameters"""
