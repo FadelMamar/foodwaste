@@ -53,9 +53,10 @@ class LoggingConfig(BaseModel):
     """Logging and saving configuration parameters"""
     save_dir: str = Field(default="checkpoints", description="Directory to save checkpoints")
     eval_interval: int = Field(default=1, description="Evaluation interval in epoch")
-    mlflow_url: str = Field(default="http://localhost:5000", description="MLflow server URL")
-    mlflow_experiment_name: str = Field(default="foodwaste-segmentation", description="MLflow experiment name")
-    mlflow_run_name: str = Field(default="foodwaste-segmentation", description="MLflow run name")
+    logger_url: str = Field(default="http://localhost:5000", description="Logger server URL")
+    experiment_name: str = Field(default="foodwaste-segmentation", description="experiment name")
+    run_name: str = Field(default="foodwaste-segmentation", description="run name")
+    logger:str = Field(default="mlflow", description="Logger to use")
 
 class DataConfig(BaseModel):
     """Data configuration parameters"""

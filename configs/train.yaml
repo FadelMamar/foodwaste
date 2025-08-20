@@ -39,9 +39,10 @@ data:
 logging:
   save_dir: "checkpoints"
   eval_interval: 1
-  mlflow_url: "http://localhost:5000"
-  mlflow_experiment_name: "foodwaste-segmentation"
-  mlflow_run_name: "foodwaste-segmentation"
+  logger_url: "http://localhost:5000"
+  experiment_name: "foodwaste-segmentation"
+  run_name: "foodwaste-segmentation"
+  logger: "tensorboard"
 
 # Data augmentation configuration
 augmentation:

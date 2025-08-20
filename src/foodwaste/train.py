@@ -27,8 +27,8 @@ from .utils import (
 
 from logging import getLogger
 
-logger = getLogger(__name__)
 
+LOGGER = getLogger(__name__)
 
 class FoodWasteSegmentationModule(L.LightningModule):
     """PyTorch Lightning module for FoodWaste semantic segmentation"""
@@ -158,7 +158,8 @@ class FoodWasteSegmentationModule(L.LightningModule):
 def runner(config: MainConfig):
     """Main training function using PyTorch Lightning"""
     # Setup
-    logger.info("Starting FoodWaste semantic segmentation training with PyTorch Lightning")
+    
+    LOGGER.info("Starting FoodWaste semantic segmentation training with PyTorch Lightning")
 
     # Set seed for reproducibility
     set_seed(config.training.seed)
@@ -181,26 +182,35 @@ def runner(config: MainConfig):
     model = FoodWasteSegmentationModule(config)
     
     # Create logger
-    mlflow_logger = MLFlowLogger(
-        tracking_uri=config.logging.mlflow_url,
-        experiment_name=config.logging.mlflow_experiment_name,
-        run_name=config.logging.mlflow_run_name,
-        #tags=config.model_dump()
-    )
+    if config.logging.logger == "mlflow":
+        logger = MLFlowLogger(
+            tracking_uri=config.logging.logger_url,
+            experiment_name=config.logging.experiment_name,
+            run_name=config.logging.run_name,
+            #tags=config.model_dump()
+        )
+    elif config.logging.logger == "tensorboard":
+        logger = TensorBoardLogger(
+            save_dir=config.logging.save_dir,
+            name=config.logging.experiment_name,
+            version=config.logging.run_name,
+        )
+    else:
+        raise ValueError(f"Logger {config.logging.logger} not supported")
     
     # Create trainer
     trainer = L.Trainer(
         max_epochs=config.training.num_epochs,
         accelerator=config.training.accelerator,
         precision=config.training.precision,
-        logger=mlflow_logger,
+        logger=logger,
         #callbacks=model.configure_callbacks(),
         check_val_every_n_epoch=config.logging.eval_interval,
         num_sanity_val_steps=2,
     )
     
     # Train the model
-    logger.info("Starting training...")
+    LOGGER.info("Starting training...")
     trainer.fit(model, data_module)
     
     # Test the model
@@ -209,6 +219,6 @@ def runner(config: MainConfig):
     
     # Save the final model
     final_model_path = trainer.checkpoint_callback.best_model_path
-    logger.info(f"Final model saved to {final_model_path}")
+    LOGGER.info(f"Final model saved to {final_model_path}")
     
-    logger.info("Training completed!")
+    LOGGER.info("Training completed!")

@@ -17,6 +17,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     "pydantic>=2.11.7",
     "rich>=14.1.0",
+    "tensorboard>=2.20.0",
     "timm>=1.0.19",
     "torch==2.6.0",
     "torchmetrics>=1.8.1",

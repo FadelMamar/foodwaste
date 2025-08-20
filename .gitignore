@@ -8,6 +8,7 @@ __pycache__/
 
 /runs/
 /data_cache/
+/checkpoints/
 
 # Distribution / packaging
 .Python
