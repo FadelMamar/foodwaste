@@ -17,8 +17,8 @@ from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
 from torchmetrics.segmentation import MeanIoU,DiceScore
 from copy import deepcopy
 
-from .config import TrainingConfig, MainConfig
-from .models import Dinov2ForSemanticSegmentation
+from .config import MainConfig
+from .models import Dinov2ForSemanticSegmentation,PatchClassifier
 from .dataset import id2label, FoodSegmentationDataModule
 
 from .utils import (
@@ -39,7 +39,10 @@ class FoodWasteSegmentationModule(L.LightningModule):
         self.config = config
         
         # Create model
-        self.model = Dinov2ForSemanticSegmentation(config)
+        if config.model.use_patch_classifier:
+            self.model = PatchClassifier(config)
+        else:
+            self.model = Dinov2ForSemanticSegmentation(config)
         
         # Losses
         self.train_loss = nn.CrossEntropyLoss(ignore_index=0)
@@ -65,15 +68,22 @@ class FoodWasteSegmentationModule(L.LightningModule):
         }
         
         
-    def forward(self, pixel_values):
+    def forward(self, pixel_values,mask:Optional[torch.Tensor]=None):
         """Forward pass through the model"""
-        return self.model(pixel_values=pixel_values)
+        return self.model(pixel_values=pixel_values,mask=mask)
     
     def shared_step(self, batch, stage: str):
         """Shared step for training and validation"""
         images, labels = batch
-        outputs = self(pixel_values=images)
-        logits = outputs.logits
+        outputs = self(pixel_values=images,mask=labels)
+        
+        # Handle different model output formats
+        if isinstance(outputs, tuple):
+            # PatchClassifier returns (logits, labels)
+            logits, labels = outputs
+        else:
+            # Dinov2ForSemanticSegmentation returns logits
+            logits = outputs
 
         if stage == "train":
             loss = self.train_loss(logits, labels)
@@ -156,6 +166,8 @@ def runner(config: MainConfig):
     # Setup
     
     LOGGER.info("Starting FoodWaste semantic segmentation training with PyTorch Lightning")
+    LOGGER.info(f"Model configuration: {config.model}")
+    LOGGER.info(f"Training configuration: {config.training}")
 
     # Set seed for reproducibility
     set_seed(config.training.seed)

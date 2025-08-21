@@ -6,6 +6,8 @@ import numpy as np
 import albumentations as A
 from typing import Tuple, Dict, Any
 
+
+
 ADE_MEAN = np.array([123.675, 116.280, 103.530]) / 255
 ADE_STD = np.array([58.395, 57.120, 57.375]) / 255
 
@@ -50,3 +52,5 @@ def denormalize_image(normalized_image: np.ndarray) -> np.ndarray:
     denormalized = (normalized_image * std) + mean
     denormalized = np.clip(denormalized, 0, 255).astype(np.uint8)
     return denormalized
+
+
