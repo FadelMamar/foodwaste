@@ -51,7 +51,7 @@ uv sync
 
 ### Install with pip
 ```bash
-pip install -e .
+uv pip install -e .
 ```
 
 ## 🚀 Quick Start
@@ -291,15 +291,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📚 References
 
 - [DINOv2: Learning Robust Visual Features without Supervision](https://arxiv.org/abs/2304.07193)
-- [FoodSeg103: A Dataset for Food Image Segmentation](https://github.com/LARC-CMU-SRI/FoodSeg103)
+- [FoodSeg103: A Dataset for Food Image Segmentation](https://huggingface.co/datasets/EduardoPacheco/FoodSeg103)
 - [PyTorch Lightning Documentation](https://lightning.ai/docs/pytorch/stable/)
 - [Hugging Face Transformers](https://huggingface.co/docs/transformers/)
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/foodwaste/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/foodwaste/discussions)
-- **Documentation**: [Project Wiki](https://github.com/your-username/foodwaste/wiki)
+- **Issues**: [GitHub Issues](https://github.com/fadelmamar/foodwaste/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/fadelmamar/foodwaste/discussions)
+- **Documentation**: [Project Wiki](https://github.com/fadelmamar/foodwaste/wiki)
 
 ---
 
