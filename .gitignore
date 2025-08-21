@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 /runs/
-/data_cache/
+data_cache/
 /checkpoints/
 
 # Distribution / packaging
